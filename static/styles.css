@@ -3,3 +3,14 @@ body { font-family: 'Roboto', sans-serif; }
 .next-event { font-size: 1.5rem; color: #007bff; }
 .last-event { font-size: 1.2rem; }
 .team-score { font-size: 3rem; color: #28a745; }
+
+/* Remove number input spinners */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type=number] {
+    -moz-appearance:textfield;
+}

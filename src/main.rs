@@ -10,6 +10,7 @@ use chrono::NaiveDate;
 struct Team {
     id: Uuid,
     name: String,
+    short_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,7 +65,12 @@ async fn create_meet(db: web::Data<Db>, body: web::Json<CreateMeetRequest>) -> i
     let teams: Vec<Team> = req
         .teams
         .into_iter()
-        .map(|n| Team { id: Uuid::new_v4(), name: n })
+        .map(|n| {
+            let parts: Vec<&str> = n.split(':').collect();
+            let name = parts[0].trim().to_string();
+            let short_name = if parts.len() > 1 { parts[1].trim().to_string() } else { name.clone() };
+            Team { id: Uuid::new_v4(), name, short_name }
+        })
         .collect();
     let lanes = req.lanes.unwrap_or(8);
     let lane_team = (0..lanes).map(|i| Some(teams[i % teams.len()].id)).collect();
