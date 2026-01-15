@@ -1,8 +1,5 @@
-body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; }
-header { background: #0b79d0; color: white; padding: 12px; }
-header h1 { margin: 0 0 8px 0; }
-nav button { margin-right: 6px; }
-main { padding: 16px; }
-table { border-collapse: collapse; width: 100%; }
-td, th { border: 1px solid #ddd; padding: 8px; }
-input[type='text'] { width: 100%; }
+body { font-family: 'Roboto', sans-serif; }
+.scoreboard { font-size: 2rem; font-weight: bold; }
+.next-event { font-size: 1.5rem; color: #007bff; }
+.last-event { font-size: 1.2rem; }
+.team-score { font-size: 3rem; color: #28a745; }

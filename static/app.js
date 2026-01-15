@@ -11,6 +11,7 @@ function el(tag, props = {}, ...children) {
   const e = document.createElement(tag);
   for (const k of Object.keys(props)) {
     if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), props[k]);
+    else if (k === 'class') e.className = props[k];
     else e.setAttribute(k, props[k]);
   }
   for (const c of children) if (c) e.append(typeof c === 'string' ? document.createTextNode(c) : c);
@@ -19,25 +20,60 @@ function el(tag, props = {}, ...children) {
 
 async function showMeets() {
   clear();
-  const meets = await api('/api/meets');
-  const list = el('div');
-  meets.forEach(m => {
-    const btn = el('button', { onclick: () => loadMeet(m.id) }, m.title + ' (' + m.date + ')');
-    list.appendChild(btn);
-  });
-  main.appendChild(el('h2', {}, 'Meets'));
-  main.appendChild(list);
+  try {
+    const meets = await api('/api/meets');
+    
+    const h2 = el('h2', { class: 'mb-3' }, 'Meets');
+    main.appendChild(h2);
+    
+    if (meets.length === 0) {
+      const noMeetsDiv = el('div', { class: 'alert alert-info' }, 
+        'No meets found. Click "Create Meet" to get started.'
+      );
+      main.appendChild(noMeetsDiv);
+    } else {
+      const list = el('div', { class: 'list-group' });
+      meets.forEach(m => {
+        const btn = el('button', { class: 'list-group-item list-group-item-action', onclick: () => loadMeet(m.id) }, m.title + ' (' + m.date + ')');
+        list.appendChild(btn);
+      });
+      main.appendChild(list);
+    }
+  } catch (error) {
+    const errorDiv = el('div', { class: 'alert alert-danger' }, 'Error loading meets: ' + error.message);
+    main.appendChild(errorDiv);
+  }
 }
 
 function showCreate() {
   clear();
-  const form = el('form');
-  const title = el('input', { type: 'text', placeholder: 'Meet Title', id: 'title' });
-  const date = el('input', { type: 'text', placeholder: 'YYYY-MM-DD', id: 'date' });
-  const teams = el('textarea', { placeholder: 'One team per line', id: 'teams' });
+  const form = el('form', { class: 'container-fluid' });
+  const titleGroup = el('div', { class: 'mb-3' });
+  titleGroup.appendChild(el('label', { class: 'form-label', for: 'title' }, 'Meet Title'));
+  const title = el('input', { class: 'form-control', type: 'text', placeholder: 'Meet Title', id: 'title' });
+  titleGroup.appendChild(title);
+  form.appendChild(titleGroup);
+  
+  const dateGroup = el('div', { class: 'mb-3' });
+  dateGroup.appendChild(el('label', { class: 'form-label', for: 'date' }, 'Date (YYYY-MM-DD)'));
+  const date = el('input', { class: 'form-control', type: 'text', placeholder: 'YYYY-MM-DD', id: 'date' });
+  dateGroup.appendChild(date);
+  form.appendChild(dateGroup);
+  
+  const lanesGroup = el('div', { class: 'mb-3' });
+  lanesGroup.appendChild(el('label', { class: 'form-label', for: 'lanes' }, 'Number of Lanes'));
+  const lanes = el('input', { class: 'form-control', type: 'number', id: 'lanes', value: 8 });
+  lanesGroup.appendChild(lanes);
+  form.appendChild(lanesGroup);
+  
+  const teamsGroup = el('div', { class: 'mb-3' });
+  teamsGroup.appendChild(el('label', { class: 'form-label', for: 'teams' }, 'Teams (one per line)'));
+  const teams = el('textarea', { class: 'form-control', placeholder: 'One team per line', id: 'teams', rows: 4 });
   teams.value = 'Team A\nTeam B'; // default to 2 teams
-  const lanes = el('input', { type: 'number', id: 'lanes', value: 8 });
-  const submit = el('button', { onclick: async (e) => {
+  teamsGroup.appendChild(teams);
+  form.appendChild(teamsGroup);
+  
+  const submit = el('button', { class: 'btn btn-primary', onclick: async (e) => {
     e.preventDefault();
     const body = { title: title.value, date: date.value || new Date().toISOString().slice(0,10), teams: teams.value.split('\n').map(s=>s.trim()).filter(Boolean), lanes: parseInt(lanes.value || '8') };
     const res = await fetch('/api/meets', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -48,12 +84,8 @@ function showCreate() {
       alert('Error creating meet');
     }
   }}, 'Create');
-  form.appendChild(el('div', {}, title));
-  form.appendChild(el('div', {}, date));
-  form.appendChild(el('div', {}, lanes));
-  form.appendChild(el('div', {}, teams));
-  form.appendChild(el('div', {}, submit));
-  main.appendChild(el('h2', {}, 'Create Meet'));
+  form.appendChild(submit);
+  main.appendChild(el('h2', { class: 'mb-3' }, 'Create Meet'));
   main.appendChild(form);
 }
 
@@ -69,20 +101,27 @@ function showMeetDetail() {
   clear();
   if (!currentMeet) return main.appendChild(el('div', {}, 'No meet selected'));
   main.appendChild(el('h2', {}, currentMeet.title + ' (' + currentMeet.date + ')'));
-  const teams = el('ul');
-  currentMeet.teams.forEach(t => teams.appendChild(el('li', {}, t.name)));
-  main.appendChild(el('h3', {}, 'Teams'));
-  main.appendChild(teams);
+  const teamsCard = el('div', { class: 'card' });
+  const teamsBody = el('div', { class: 'card-body' });
+  teamsBody.appendChild(el('h5', { class: 'card-title' }, 'Teams'));
+  const teams = el('ul', { class: 'list-group list-group-flush' });
+  currentMeet.teams.forEach(t => teams.appendChild(el('li', { class: 'list-group-item' }, t.name)));
+  teamsBody.appendChild(teams);
+  teamsCard.appendChild(teamsBody);
+  main.appendChild(teamsCard);
 }
 
 function showConfig() {
   clear();
   if (!currentMeet) return main.appendChild(el('div', {}, 'Select a meet first'));
   main.appendChild(el('h2', {}, 'Configure Meet'));
-  const wrap = el('div');
-  wrap.appendChild(el('div', {}, 'Lanes: ' + currentMeet.lanes));
+  const wrap = el('div', { class: 'container-fluid' });
+  wrap.appendChild(el('div', { class: 'alert alert-info' }, 'Lanes: ' + currentMeet.lanes));
   // lane assignment
-  const table = el('table');
+  const laneCard = el('div', { class: 'card mb-3' });
+  const laneBody = el('div', { class: 'card-body' });
+  laneBody.appendChild(el('h5', { class: 'card-title' }, 'Lane Assignments'));
+  const table = el('table', { class: 'table table-striped' });
   const header = el('tr');
   header.appendChild(el('th', {}, 'Lane'));
   header.appendChild(el('th', {}, 'Team'));
@@ -93,7 +132,7 @@ function showConfig() {
   for (let i=0;i<currentMeet.lanes;i++){
     const tr = el('tr');
     tr.appendChild(el('td', {}, ''+(i+1)));
-    const sel = el('select', { id: 'lane_'+i });
+    const sel = el('select', { class: 'form-select', id: 'lane_'+i });
     sel.appendChild(el('option', { value: '' }, '---'));
     currentMeet.teams.forEach(t => {
       const opt = el('option', { value: t.id }, t.name);
@@ -102,19 +141,22 @@ function showConfig() {
     });
     tr.appendChild(el('td', {}, sel));
     laneSelects.push(sel);
-    const chk = el('input', { type: 'checkbox', id: 'exh_'+i });
+    const chk = el('input', { class: 'form-check-input', type: 'checkbox', id: 'exh_'+i });
     if (currentMeet.exhibition_lanes && currentMeet.exhibition_lanes[i]) chk.checked = true;
     tr.appendChild(el('td', {}, chk));
     exhibitionChecks.push(chk);
     table.appendChild(tr);
   }
-  wrap.appendChild(table);
-  const pointsDiv = el('div', { style: 'margin-top: 20px;' });
-  pointsDiv.appendChild(el('h3', {}, 'Points Configuration'));
+  laneBody.appendChild(table);
+  laneCard.appendChild(laneBody);
+  wrap.appendChild(laneCard);
+  const pointsCard = el('div', { class: 'card mb-3' });
+  const pointsBody = el('div', { class: 'card-body' });
+  pointsBody.appendChild(el('h5', { class: 'card-title' }, 'Points Configuration'));
   
   // Individual
-  pointsDiv.appendChild(el('h4', {}, 'Individual Events'));
-  const indTable = el('table');
+  pointsBody.appendChild(el('h6', {}, 'Individual Events'));
+  const indTable = el('table', { class: 'table table-striped' });
   const indHeader = el('tr');
   indHeader.appendChild(el('th', {}, 'Place'));
   indHeader.appendChild(el('th', {}, 'Points'));
@@ -123,16 +165,16 @@ function showConfig() {
   for (let i=0; i<8; i++) {
     const tr = el('tr');
     tr.appendChild(el('td', {}, (i+1) + (i===0?'st':i===1?'nd':i===2?'rd':'th')));
-    const inp = el('input', { type: 'number', value: currentMeet.points_individual[i] || 0 });
+    const inp = el('input', { class: 'form-control', type: 'number', value: currentMeet.points_individual[i] || 0 });
     tr.appendChild(el('td', {}, inp));
     indInputs.push(inp);
     indTable.appendChild(tr);
   }
-  pointsDiv.appendChild(indTable);
+  pointsBody.appendChild(indTable);
   
   // Relay
-  pointsDiv.appendChild(el('h4', {}, 'Relay Events'));
-  const relTable = el('table');
+  pointsBody.appendChild(el('h6', {}, 'Relay Events'));
+  const relTable = el('table', { class: 'table table-striped' });
   const relHeader = el('tr');
   relHeader.appendChild(el('th', {}, 'Place'));
   relHeader.appendChild(el('th', {}, 'Points'));
@@ -141,15 +183,15 @@ function showConfig() {
   for (let i=0; i<8; i++) {
     const tr = el('tr');
     tr.appendChild(el('td', {}, (i+1) + (i===0?'st':i===1?'nd':i===2?'rd':'th')));
-    const inp = el('input', { type: 'number', value: currentMeet.points_relay[i] || 0 });
+    const inp = el('input', { class: 'form-control', type: 'number', value: currentMeet.points_relay[i] || 0 });
     tr.appendChild(el('td', {}, inp));
     relInputs.push(inp);
     relTable.appendChild(tr);
   }
-  pointsDiv.appendChild(relTable);
-  
-  wrap.appendChild(pointsDiv);
-  const saveBtn = el('button', { onclick: async ()=>{
+  pointsBody.appendChild(relTable);
+  pointsCard.appendChild(pointsBody);
+  wrap.appendChild(pointsCard);
+  const saveBtn = el('button', { class: 'btn btn-primary', onclick: async ()=>{
     const lane_team = laneSelects.map(s => s.value || null);
     const exhibition_lanes = exhibitionChecks.map(c => c.checked);
     const points_individual = indInputs.map(inp => parseInt(inp.value) || 0);
@@ -175,8 +217,8 @@ function showResultsEntry() {
   clear();
   if (!currentMeet) return main.appendChild(el('div', {}, 'Select a meet first'));
   main.appendChild(el('h2', {}, 'Results Entry'));
-  const container = el('div');
-  const table = el('table');
+  const container = el('div', { class: 'container-fluid' });
+  const table = el('table', { class: 'table table-striped' });
   // header
   const header = el('tr');
   header.appendChild(el('th', {}, 'Event'));
@@ -192,13 +234,13 @@ function showResultsEntry() {
     tr.appendChild(el('td', {}, (idx+1)+'. '+ev.name + (ev.is_relay ? ' (Relay)' : '')));
     const placeInputs = [];
     for (let p=0; p<8; p++) {
-      const inp = el('input', { type: 'number', min: 1, max: currentMeet.lanes, id: 'ev_'+idx+'_p'+p });
+      const inp = el('input', { class: 'form-control', type: 'number', min: 1, max: currentMeet.lanes, id: 'ev_'+idx+'_p'+p });
       tr.appendChild(el('td', {}, inp));
       placeInputs.push(inp);
     }
-    const dqInp = el('input', { type: 'text', placeholder: 'e.g. 1,3', id: 'dq_'+idx });
+    const dqInp = el('input', { class: 'form-control', type: 'text', placeholder: 'e.g. 1,3', id: 'dq_'+idx });
     tr.appendChild(el('td', {}, dqInp));
-    const btn = el('button', { onclick: async ()=>{
+    const btn = el('button', { class: 'btn btn-primary', onclick: async ()=>{
       const placements = placeInputs.map(inp => parseInt(inp.value)).filter(n => !isNaN(n) && n >=1 && n <= currentMeet.lanes);
       const dqs = dqInp.value.split(',').map(s=>parseInt(s.trim())).filter(n=>!isNaN(n) && n >=1 && n <= currentMeet.lanes);
       
@@ -265,29 +307,34 @@ async function showDetails() {
   const container = el('div');
 
   // Overall scores
-  const overall = el('div');
-  overall.appendChild(el('h3', {}, 'Overall Scores'));
-  const overallList = el('ul');
-  currentMeet.teams.forEach(t => overallList.appendChild(el('li', {}, t.name + ': ' + (scores.team_scores[t.id] || 0) + ' points')));
-  overall.appendChild(overallList);
-  container.appendChild(overall);
+  const overallCard = el('div', { class: 'card mb-3' });
+  const overallBody = el('div', { class: 'card-body' });
+  overallBody.appendChild(el('h5', { class: 'card-title' }, 'Overall Scores'));
+  const overallList = el('ul', { class: 'list-group list-group-flush' });
+  currentMeet.teams.forEach(t => overallList.appendChild(el('li', { class: 'list-group-item d-flex justify-content-between align-items-center' }, t.name, el('span', { class: 'badge bg-primary rounded-pill' }, (scores.team_scores[t.id] || 0) + ' points'))));
+  overallBody.appendChild(overallList);
+  overallCard.appendChild(overallBody);
+  container.appendChild(overallCard);
 
   // Per event details
   scores.per_event.forEach((eventDetail, idx) => {
-    const eventDiv = el('div', { style: 'margin-top: 20px; border: 1px solid #ccc; padding: 10px;' });
-    eventDiv.appendChild(el('h4', {}, (idx+1) + '. ' + eventDetail.event_name + (eventDetail.is_relay ? ' (Relay)' : '')));
+    const eventCard = el('div', { class: 'card mb-3' });
+    const eventBody = el('div', { class: 'card-body' });
+    eventBody.appendChild(el('h5', { class: 'card-title' }, (idx+1) + '. ' + eventDetail.event_name + (eventDetail.is_relay ? ' (Relay)' : '')));
     
     if (eventDetail.placements.length === 0) {
-      eventDiv.appendChild(el('p', {}, 'No results entered yet.'));
+      eventBody.appendChild(el('p', { class: 'text-muted' }, 'No results entered yet.'));
     } else {
-      const table = el('table');
+      const table = el('table', { class: 'table table-striped' });
+      const thead = el('thead');
       const header = el('tr');
       header.appendChild(el('th', {}, 'Place'));
       header.appendChild(el('th', {}, 'Lane'));
       header.appendChild(el('th', {}, 'Team'));
       header.appendChild(el('th', {}, 'Points'));
-      table.appendChild(header);
-      
+      thead.appendChild(header);
+      table.appendChild(thead);
+      const tbody = el('tbody');
       eventDetail.placements.forEach(p => {
         const team = currentMeet.teams.find(t => t.id === p.team_id);
         const tr = el('tr');
@@ -295,22 +342,22 @@ async function showDetails() {
         tr.appendChild(el('td', {}, p.lane));
         tr.appendChild(el('td', {}, team ? team.name : 'Unknown'));
         tr.appendChild(el('td', {}, p.points));
-        table.appendChild(tr);
+        tbody.appendChild(tr);
       });
-      eventDiv.appendChild(table);
+      table.appendChild(tbody);
+      eventBody.appendChild(table);
       
       // Points awarded summary
-      const pointsDiv = el('div');
-      pointsDiv.appendChild(el('p', {}, 'Points Awarded:'));
-      const pointsList = el('ul');
+      eventBody.appendChild(el('h6', {}, 'Points Awarded:'));
+      const pointsList = el('ul', { class: 'list-group' });
       Object.keys(eventDetail.points_awarded).forEach(teamId => {
         const team = currentMeet.teams.find(t => t.id === teamId);
-        pointsList.appendChild(el('li', {}, (team ? team.name : 'Unknown') + ': ' + eventDetail.points_awarded[teamId]));
+        pointsList.appendChild(el('li', { class: 'list-group-item d-flex justify-content-between align-items-center' }, (team ? team.name : 'Unknown'), el('span', { class: 'badge bg-primary rounded-pill' }, eventDetail.points_awarded[teamId])));
       });
-      pointsDiv.appendChild(pointsList);
-      eventDiv.appendChild(pointsDiv);
+      eventBody.appendChild(pointsList);
     }
-    container.appendChild(eventDiv);
+    eventCard.appendChild(eventBody);
+    container.appendChild(eventCard);
   });
 
   main.appendChild(container);
@@ -318,12 +365,77 @@ async function showDetails() {
 
 async function showSummary() {
   clear();
-  if (!currentMeet) return main.appendChild(el('div', {}, 'Select a meet first'));
-  main.appendChild(el('h2', {}, 'Summary'));
+  if (!currentMeet) return main.appendChild(el('div', { class: 'alert alert-warning' }, 'Select a meet first'));
+  main.appendChild(el('h2', { class: 'mb-4' }, 'Scoreboard'));
   const scores = await api('/api/meets/'+currentMeet.id+'/scores');
-  const list = el('ul');
-  currentMeet.teams.forEach(t => list.appendChild(el('li', {}, t.name + ': ' + (scores.team_scores[t.id] || 0))));
-  main.appendChild(list);
+  
+  // Find last event and next event
+  let lastEvent = null;
+  let nextEvent = null;
+  for (let i = currentMeet.events.length - 1; i >= 0; i--) {
+    if (currentMeet.results[i]) {
+      lastEvent = currentMeet.events[i];
+      break;
+    }
+  }
+  for (let i = 0; i < currentMeet.events.length; i++) {
+    if (!currentMeet.results[i]) {
+      nextEvent = currentMeet.events[i];
+      break;
+    }
+  }
+  
+  const container = el('div', { class: 'row' });
+  
+  // Current Scores
+  const scoresCol = el('div', { class: 'col-md-6' });
+  scoresCol.appendChild(el('h3', { class: 'text-center mb-3' }, 'Current Scores'));
+  const scoresCard = el('div', { class: 'card' });
+  const scoresBody = el('div', { class: 'card-body text-center' });
+  currentMeet.teams.forEach(t => {
+    const score = scores.team_scores[t.id] || 0;
+    scoresBody.appendChild(el('div', { class: 'mb-2' }, el('span', { class: 'team-score' }, score + ' - ' + t.name)));
+  });
+  scoresCard.appendChild(scoresBody);
+  scoresCol.appendChild(scoresCard);
+  container.appendChild(scoresCol);
+  
+  // Last Event and Next Event
+  const eventsCol = el('div', { class: 'col-md-6' });
+  eventsCol.appendChild(el('h3', { class: 'text-center mb-3' }, 'Event Info'));
+  
+  if (lastEvent) {
+    const lastCard = el('div', { class: 'card mb-3' });
+    const lastBody = el('div', { class: 'card-body' });
+    lastBody.appendChild(el('h5', { class: 'card-title' }, 'Last Event'));
+    lastBody.appendChild(el('p', { class: 'card-text last-event' }, lastEvent.name + (lastEvent.is_relay ? ' (Relay)' : '')));
+    // Show points from last event
+    const lastEventIndex = currentMeet.events.findIndex(e => e.name === lastEvent.name);
+    if (lastEventIndex >= 0 && scores.per_event[lastEventIndex]) {
+      const points = scores.per_event[lastEventIndex].points_awarded;
+      const pointsList = el('ul', { class: 'list-group list-group-flush' });
+      Object.keys(points).forEach(teamId => {
+        const team = currentMeet.teams.find(t => t.id === teamId);
+        pointsList.appendChild(el('li', { class: 'list-group-item' }, (team ? team.name : 'Unknown') + ': ' + points[teamId]));
+      });
+      lastBody.appendChild(pointsList);
+    }
+    lastCard.appendChild(lastBody);
+    eventsCol.appendChild(lastCard);
+  }
+  
+  if (nextEvent) {
+    const nextCard = el('div', { class: 'card' });
+    const nextBody = el('div', { class: 'card-body text-center' });
+    nextBody.appendChild(el('h5', { class: 'card-title' }, 'Next Event'));
+    nextBody.appendChild(el('p', { class: 'card-text next-event' }, nextEvent.name + (nextEvent.is_relay ? ' (Relay)' : '')));
+    nextCard.appendChild(nextBody);
+    eventsCol.appendChild(nextCard);
+  }
+  
+  container.appendChild(eventsCol);
+  
+  main.appendChild(container);
 }
 
 document.getElementById('meetsBtn').addEventListener('click', showMeets);
