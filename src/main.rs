@@ -26,6 +26,7 @@ struct Meet {
     teams: Vec<Team>,
     lanes: usize,
     lane_team: Vec<Option<Uuid>>,
+    exhibition_lanes: Vec<bool>,
     points_individual: Vec<i32>,
     points_relay: Vec<i32>,
     events: Vec<Event>,
@@ -66,7 +67,8 @@ async fn create_meet(db: web::Data<Db>, body: web::Json<CreateMeetRequest>) -> i
         .map(|n| Team { id: Uuid::new_v4(), name: n })
         .collect();
     let lanes = req.lanes.unwrap_or(8);
-    let lane_team = vec![None; lanes];
+    let lane_team = (0..lanes).map(|i| Some(teams[i % teams.len()].id)).collect();
+    let exhibition_lanes = vec![false; lanes];
     let default_ind = vec![8, 6, 5, 4, 3, 2, 1];
     let default_relay = vec![6, 4, 3, 2, 1];
     let default_events = vec![
@@ -90,6 +92,7 @@ async fn create_meet(db: web::Data<Db>, body: web::Json<CreateMeetRequest>) -> i
         teams,
         lanes,
         lane_team,
+        exhibition_lanes,
         points_individual: default_ind,
         points_relay: default_relay,
         events: default_events,
@@ -116,6 +119,7 @@ async fn get_meet(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respond
 #[derive(Debug, Deserialize)]
 struct UpdateConfig {
     lane_team: Vec<Option<String>>, // UUIDs as strings
+    exhibition_lanes: Vec<bool>,
     points_individual: Option<Vec<i32>>,
     points_relay: Option<Vec<i32>>,
 }
@@ -137,6 +141,7 @@ async fn update_config(db: web::Data<Db>, path: web::Path<(String,)>, body: web:
         return HttpResponse::BadRequest().body("lane_team length mismatch");
     }
     meet.lane_team = req.lane_team.into_iter().map(|s| s.and_then(|s| Uuid::parse_str(&s).ok())).collect();
+    meet.exhibition_lanes = req.exhibition_lanes;
     if let Some(pi) = req.points_individual { meet.points_individual = pi; }
     if let Some(pr) = req.points_relay { meet.points_relay = pr; }
     HttpResponse::Ok().json(meet)
@@ -169,34 +174,63 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
     let mut team_scores: HashMap<Uuid, i32> = HashMap::new();
     for t in &meet.teams { team_scores.insert(t.id, 0); }
 
-    let mut per_event_points: Vec<HashMap<Uuid, i32>> = vec![];
+    let mut per_event_details: Vec<EventDetails> = vec![];
 
     for (idx, event) in meet.events.iter().enumerate() {
         let mut event_points: HashMap<Uuid, i32> = HashMap::new();
+        let mut placements_details: Vec<PlacementDetail> = vec![];
         if let Some(Some(results)) = meet.results.get(idx) {
             let placements = &results.placements;
             let dqs: Vec<usize> = results.disqualified.clone();
             let points = if event.is_relay { &meet.points_relay } else { &meet.points_individual };
-            for (place, lane) in placements.iter().enumerate() {
-                if dqs.contains(lane) { continue; }
-                if *lane == 0 || *lane > meet.lanes { continue; }
+            for (place, &lane) in placements.iter().enumerate() {
+                if dqs.contains(&lane) { continue; }
+                if lane == 0 || lane > meet.lanes { continue; }
+                if *meet.exhibition_lanes.get(lane - 1).unwrap_or(&false) { continue; } // skip exhibition
                 if let Some(Some(team_id)) = meet.lane_team.get(lane - 1) {
                     let pts = points.get(place).cloned().unwrap_or(0);
                     *event_points.entry(*team_id).or_insert(0) += pts;
                     *team_scores.entry(*team_id).or_insert(0) += pts;
+                    placements_details.push(PlacementDetail {
+                        place: place + 1,
+                        lane,
+                        team_id: *team_id,
+                        points: pts,
+                    });
                 }
             }
         }
-        per_event_points.push(event_points);
+        per_event_details.push(EventDetails {
+            event_name: event.name.clone(),
+            is_relay: event.is_relay,
+            placements: placements_details,
+            points_awarded: event_points,
+        });
     }
 
     #[derive(Serialize)]
     struct ScoresResp {
         team_scores: HashMap<Uuid, i32>,
-        per_event: Vec<HashMap<Uuid, i32>>,
+        per_event: Vec<EventDetails>,
     }
 
-    let resp = ScoresResp { team_scores, per_event: per_event_points };
+    #[derive(Serialize)]
+    struct EventDetails {
+        event_name: String,
+        is_relay: bool,
+        placements: Vec<PlacementDetail>,
+        points_awarded: HashMap<Uuid, i32>,
+    }
+
+    #[derive(Serialize)]
+    struct PlacementDetail {
+        place: usize,
+        lane: usize,
+        team_id: Uuid,
+        points: i32,
+    }
+
+    let resp = ScoresResp { team_scores, per_event: per_event_details };
     HttpResponse::Ok().json(resp)
 }
 
