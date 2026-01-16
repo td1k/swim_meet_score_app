@@ -47,5 +47,34 @@ provide a summary page (webpage) that could be used as a score board showing the
     summary of the points earned for the last race. It should also say which event is up next. 
 
 
+## Running with Docker
+
+To run the application using Docker:
+
+```bash
+docker run -p 8080:8080 your-docker-username/swim-meet-score-app:latest
+```
+
+The application will be available at http://localhost:8080.
+
+## Development
+
+To run locally:
+
+```bash
+cargo run
+```
+
+## CI/CD
+
+The project uses GitHub Actions for CI/CD. On every push to the `main` branch, the code is built into a Docker image and pushed to Docker Hub.
+
+To set up CI/CD:
+1. Set up secrets in your GitHub repository:
+   - `DOCKER_USERNAME`: Your Docker Hub username
+   - `DOCKER_PASSWORD`: Your Docker Hub password or access token
+2. Update the image tag in `.github/workflows/build.yml` to match your Docker Hub username
+
+
 ## Refernce:
 The following document provides some detail on the events and the way meets are scored. 
