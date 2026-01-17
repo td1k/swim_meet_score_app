@@ -542,6 +542,7 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
     for (idx, event) in meet.events.iter().enumerate() {
         let mut event_points: HashMap<Uuid, i32> = HashMap::new();
         let mut placements_details: Vec<PlacementDetail> = vec![];
+        let mut disqualified_details: Vec<DisqualifiedDetail> = vec![];
         if let Some(Some(results)) = meet.results.get(idx) {
             let placements = &results.placements;
             let dqs: Vec<usize> = results.disqualified.clone();
@@ -562,11 +563,23 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
                     });
                 }
             }
+            // Collect disqualified
+            for &lane in &dqs {
+                if lane == 0 || lane > meet.lanes { continue; }
+                if *meet.exhibition_lanes.get(lane - 1).unwrap_or(&false) { continue; } // skip exhibition
+                if let Some(Some(team_id)) = meet.lane_team.get(lane - 1) {
+                    disqualified_details.push(DisqualifiedDetail {
+                        lane,
+                        team_id: *team_id,
+                    });
+                }
+            }
         }
         per_event_details.push(EventDetails {
             event_name: event.name.clone(),
             is_relay: event.is_relay,
             placements: placements_details,
+            disqualified: disqualified_details,
             points_awarded: event_points,
         });
     }
@@ -582,6 +595,7 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
         event_name: String,
         is_relay: bool,
         placements: Vec<PlacementDetail>,
+        disqualified: Vec<DisqualifiedDetail>,
         points_awarded: HashMap<Uuid, i32>,
     }
 
@@ -591,6 +605,12 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
         lane: usize,
         team_id: Uuid,
         points: i32,
+    }
+
+    #[derive(Serialize)]
+    struct DisqualifiedDetail {
+        lane: usize,
+        team_id: Uuid,
     }
 
     let resp = ScoresResp { team_scores, per_event: per_event_details };

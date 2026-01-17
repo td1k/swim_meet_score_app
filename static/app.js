@@ -218,84 +218,119 @@ function showResultsEntry() {
   if (!currentMeet) return main.appendChild(el('div', {}, 'Select a meet first'));
   main.appendChild(el('h2', {}, 'Results Entry'));
   const container = el('div', { class: 'container-fluid' });
-  const table = el('table', { class: 'table table-striped' });
-  // header
-  const header = el('tr');
-  header.appendChild(el('th', {}, 'Event'));
-  for (let p=1; p<=8; p++) { // assume up to 8 places
-    header.appendChild(el('th', {}, p + (p===1?'st':p===2?'nd':p===3?'rd':'th')));
-  }
-  header.appendChild(el('th', {}, 'DQ Lanes'));
-  header.appendChild(el('th', {}, 'Action'));
-  table.appendChild(header);
-  // rows
+  
   currentMeet.events.forEach((ev, idx) => {
-    const tr = el('tr');
-    tr.appendChild(el('td', {}, (idx+1)+'. '+ev.name + (ev.is_relay ? ' (Relay)' : '')));
-    const placeInputs = [];
-    for (let p=0; p<8; p++) {
-      const inp = el('input', { class: 'form-control', type: 'number', min: 1, max: currentMeet.lanes, id: 'ev_'+idx+'_p'+p });
-      tr.appendChild(el('td', {}, inp));
-      placeInputs.push(inp);
-    }
-    const dqInp = el('input', { class: 'form-control', type: 'text', placeholder: 'e.g. 1,3', id: 'dq_'+idx });
-    tr.appendChild(el('td', {}, dqInp));
-    const btn = el('button', { class: 'btn btn-primary', onclick: async ()=>{
-      const placements = placeInputs.map(inp => parseInt(inp.value)).filter(n => !isNaN(n) && n >=1 && n <= currentMeet.lanes);
-      const dqs = dqInp.value.split(',').map(s=>parseInt(s.trim())).filter(n=>!isNaN(n) && n >=1 && n <= currentMeet.lanes);
+    const eventDiv = el('div', { class: 'mb-4' });
+    eventDiv.appendChild(el('h4', {}, (idx+1)+'. '+ev.name + (ev.is_relay ? ' (Relay)' : '')));
+    
+    const lanesRow = el('div', { class: 'd-flex flex-wrap justify-content-center' });
+    const laneData = [];
+    let autoSaveTimer = null;
+    
+    const validateInputs = () => {
+      const placeCounts = new Map();
+      for (let item of laneData) {
+        const place = parseInt(item.placeInp.value);
+        if (!isNaN(place) && place >= 1 && place <= currentMeet.lanes) {
+          placeCounts.set(place, (placeCounts.get(place) || 0) + 1);
+        }
+      }
+      for (let item of laneData) {
+        const place = parseInt(item.placeInp.value);
+        if (!isNaN(place) && placeCounts.get(place) > 1) {
+          item.placeInp.classList.add('is-invalid');
+        } else {
+          item.placeInp.classList.remove('is-invalid');
+        }
+      }
+    };
+    
+    const saveResults = async () => {
+      const placements = [];
+      const disqualified = [];
+      const placementMap = new Map();
+      let hasDuplicates = false;
       
-      // Validation: unique placements, no overlap with DQs, cover all non-exhibition lanes
-      const nonExhibitionLanes = new Set();
-      for (let i=1; i<=currentMeet.lanes; i++) {
-        if (!currentMeet.exhibition_lanes[i-1]) nonExhibitionLanes.add(i);
-      }
-      const placementSet = new Set(placements);
-      const dqSet = new Set(dqs);
-      if (placementSet.size !== placements.length) {
-        alert('Error: Duplicate lane numbers in placements.');
-        return;
-      }
-      if ([...placementSet].some(l => dqSet.has(l))) {
-        alert('Error: Lane cannot be both in placements and DQs.');
-        return;
-      }
-      const usedLanes = new Set([...placementSet, ...dqSet]);
-      for (let lane of nonExhibitionLanes) {
-        if (!usedLanes.has(lane)) {
-          alert('Error: All non-exhibition lanes must be accounted for (placements or DQs).');
-          return;
+      for (let item of laneData) {
+        const place = parseInt(item.placeInp.value);
+        if (!isNaN(place) && place >= 1 && place <= currentMeet.lanes) {
+          if (placementMap.has(place)) {
+            hasDuplicates = true;
+          }
+          placementMap.set(place, item.lane);
+        }
+        if (item.dqChk.checked) {
+          disqualified.push(item.lane);
         }
       }
       
+      if (hasDuplicates) {
+        // Don't save if duplicates
+        return;
+      }
+      
+      // Sort placements by place number to get finish order
+      const sortedPlaces = Array.from(placementMap.entries()).sort((a, b) => a[0] - b[0]);
+      placements.push(...sortedPlaces.map(([_, lane]) => lane));
+      
       try {
-        const res = await fetch('/api/meets/'+currentMeet.id+'/results', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ event_index: idx, placements, disqualified: dqs }) });
+        const res = await fetch('/api/meets/'+currentMeet.id+'/results', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ event_index: idx, placements, disqualified }) });
         if (res.ok) {
-          // alert('Saved');
-          // Optionally reload meet to update currentMeet.results
           const m = await api('/api/meets/' + currentMeet.id);
           currentMeet = m;
+          // Optional: show saved message
         } else {
           alert('Error saving: ' + res.status);
         }
       } catch (e) {
         alert('Error: ' + e.message);
       }
-    }}, 'Save');
-    tr.appendChild(el('td', {}, btn));
-    table.appendChild(tr);
-
+    };
+    
+    for (let lane = 1; lane <= currentMeet.lanes; lane++) {
+      if (currentMeet.exhibition_lanes[lane-1]) continue; // Skip exhibition lanes
+      const laneDiv = el('div', { class: 'card m-2', style: 'width: 120px;' });
+      laneDiv.appendChild(el('div', { class: 'card-body text-center' }));
+      laneDiv.firstChild.appendChild(el('h6', { class: 'card-title' }, 'Lane ' + lane));
+      const placeInp = el('input', { class: 'form-control mb-2', type: 'number', min: 1, max: currentMeet.lanes, placeholder: 'Place' });
+      placeInp.addEventListener('input', () => {
+        validateInputs();
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(saveResults, 5000);
+      });
+      laneDiv.firstChild.appendChild(placeInp);
+      const dqDiv = el('div', { class: 'form-check' });
+      const dqChk = el('input', { class: 'form-check-input', type: 'checkbox', id: 'dq_' + idx + '_' + lane });
+      dqChk.addEventListener('change', () => {
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(saveResults, 5000);
+      });
+      dqDiv.appendChild(dqChk);
+      dqDiv.appendChild(el('label', { class: 'form-check-label', for: 'dq_' + idx + '_' + lane }, 'DQ'));
+      laneDiv.firstChild.appendChild(dqDiv);
+      lanesRow.appendChild(laneDiv);
+      laneData.push({ lane, placeInp, dqChk });
+    }
+    
+    eventDiv.appendChild(lanesRow);
+    
     // Pre-fill with existing results
     if (currentMeet.results && currentMeet.results[idx]) {
       const res = currentMeet.results[idx];
-      res.placements.forEach((lane, place) => {
-        if (place < placeInputs.length) {
-          placeInputs[place].value = lane;
-        }
+      res.placements.forEach((lane, placeIndex) => {
+        const place = placeIndex + 1;
+        const item = laneData.find(i => i.lane === lane);
+        if (item) item.placeInp.value = place;
       });
-      dqInp.value = res.disqualified.join(', ');
+      res.disqualified.forEach(lane => {
+        const item = laneData.find(i => i.lane === lane);
+        if (item) item.dqChk.checked = true;
+      });
     }
+    
+    container.appendChild(eventDiv);
   });
-  container.appendChild(table);
+  
   main.appendChild(container);
 }
 
@@ -346,6 +381,17 @@ async function showDetails() {
       });
       table.appendChild(tbody);
       eventBody.appendChild(table);
+      
+      // Disqualified lanes
+      if (eventDetail.disqualified && eventDetail.disqualified.length > 0) {
+        eventBody.appendChild(el('h6', {}, 'Disqualified:'));
+        const dqList = el('ul', { class: 'list-group' });
+        eventDetail.disqualified.forEach(dq => {
+          const team = currentMeet.teams.find(t => t.id === dq.team_id);
+          dqList.appendChild(el('li', { class: 'list-group-item text-decoration-line-through' }, `Lane ${dq.lane} (${team ? team.short_name : 'Unknown'})`));
+        });
+        eventBody.appendChild(dqList);
+      }
       
       // Points awarded summary
       eventBody.appendChild(el('h6', {}, 'Points Awarded:'));
