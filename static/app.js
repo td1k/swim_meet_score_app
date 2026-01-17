@@ -26,6 +26,10 @@ async function showMeets() {
     const h2 = el('h2', { class: 'mb-3' }, 'Meets');
     main.appendChild(h2);
     
+    // Create Meet button
+    const createBtn = el('button', { class: 'btn btn-primary mb-3', onclick: showCreate }, 'Create Meet');
+    main.appendChild(createBtn);
+    
     if (meets.length === 0) {
       const noMeetsDiv = el('div', { class: 'alert alert-info' }, 
         'No meets found. Click "Create Meet" to get started.'
@@ -34,8 +38,26 @@ async function showMeets() {
     } else {
       const list = el('div', { class: 'list-group' });
       meets.forEach(m => {
-        const btn = el('button', { class: 'list-group-item list-group-item-action', onclick: () => loadMeet(m.id) }, m.title + ' (' + m.date + ')');
-        list.appendChild(btn);
+        const item = el('div', { class: 'list-group-item d-flex justify-content-between align-items-center' });
+        item.appendChild(el('div', {}, m.title + ' (' + m.date + ')'));
+        const btnGroup = el('div', { class: 'btn-group' });
+        const selectBtn = el('button', { class: 'btn btn-outline-primary btn-sm', onclick: () => loadMeet(m.id) }, 'Select');
+        btnGroup.appendChild(selectBtn);
+        const configBtn = el('button', { class: 'btn btn-outline-secondary btn-sm', onclick: () => showConfigForMeet(m.id) }, 'Configure');
+        btnGroup.appendChild(configBtn);
+        const removeBtn = el('button', { class: 'btn btn-outline-danger btn-sm', onclick: (e) => {
+          if (e.target.textContent === 'Remove') {
+            e.target.textContent = 'Confirm Remove';
+            e.target.classList.remove('btn-outline-danger');
+            e.target.classList.add('btn-danger');
+          } else {
+            // Confirm remove
+            removeMeet(m.id);
+          }
+        } }, 'Remove');
+        btnGroup.appendChild(removeBtn);
+        item.appendChild(btnGroup);
+        list.appendChild(item);
       });
       main.appendChild(list);
     }
@@ -43,6 +65,26 @@ async function showMeets() {
     const errorDiv = el('div', { class: 'alert alert-danger' }, 'Error loading meets: ' + error.message);
     main.appendChild(errorDiv);
   }
+}
+
+async function removeMeet(id) {
+  if (!confirm('Are you sure you want to permanently delete this meet?')) return;
+  try {
+    const res = await fetch('/api/meets/' + id, { method: 'DELETE' });
+    if (res.ok) {
+      showMeets(); // Reload the list
+    } else {
+      alert('Error deleting meet');
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function showConfigForMeet(id) {
+  const m = await api('/api/meets/' + id);
+  currentMeet = m;
+  showConfig();
 }
 
 function showCreate() {
@@ -230,17 +272,23 @@ function showResultsEntry() {
     const validateInputs = () => {
       const placeCounts = new Map();
       for (let item of laneData) {
-        const place = parseInt(item.placeInp.value);
-        if (!isNaN(place) && place >= 1 && place <= currentMeet.lanes) {
-          placeCounts.set(place, (placeCounts.get(place) || 0) + 1);
+        if (!currentMeet.exhibition_lanes[item.lane-1]) { // Only validate non-exhibition lanes
+          const place = parseInt(item.placeInp.value);
+          if (!isNaN(place) && place >= 1 && place <= currentMeet.lanes) {
+            placeCounts.set(place, (placeCounts.get(place) || 0) + 1);
+          }
         }
       }
       for (let item of laneData) {
-        const place = parseInt(item.placeInp.value);
-        if (!isNaN(place) && placeCounts.get(place) > 1) {
-          item.placeInp.classList.add('is-invalid');
+        if (!currentMeet.exhibition_lanes[item.lane-1]) { // Only highlight non-exhibition
+          const place = parseInt(item.placeInp.value);
+          if (!isNaN(place) && placeCounts.get(place) > 1) {
+            item.placeInp.classList.add('is-invalid');
+          } else {
+            item.placeInp.classList.remove('is-invalid');
+          }
         } else {
-          item.placeInp.classList.remove('is-invalid');
+          item.placeInp.classList.remove('is-invalid'); // Exhibition always valid
         }
       }
     };
@@ -254,7 +302,7 @@ function showResultsEntry() {
       for (let item of laneData) {
         const place = parseInt(item.placeInp.value);
         if (!isNaN(place) && place >= 1 && place <= currentMeet.lanes) {
-          if (placementMap.has(place)) {
+          if (!currentMeet.exhibition_lanes[item.lane-1] && placementMap.has(place)) { // Only check duplicates for non-exhibition
             hasDuplicates = true;
           }
           placementMap.set(place, item.lane);
@@ -288,10 +336,10 @@ function showResultsEntry() {
     };
     
     for (let lane = 1; lane <= currentMeet.lanes; lane++) {
-      if (currentMeet.exhibition_lanes[lane-1]) continue; // Skip exhibition lanes
       const laneDiv = el('div', { class: 'card m-2', style: 'width: 120px;' });
       laneDiv.appendChild(el('div', { class: 'card-body text-center' }));
-      laneDiv.firstChild.appendChild(el('h6', { class: 'card-title' }, 'Lane ' + lane));
+      const isExhibition = currentMeet.exhibition_lanes[lane-1];
+      laneDiv.firstChild.appendChild(el('h6', { class: 'card-title' }, 'Lane ' + lane + (isExhibition ? ' (Exhibition)' : '')));
       const placeInp = el('input', { class: 'form-control mb-2', type: 'number', min: 1, max: currentMeet.lanes, placeholder: 'Place' });
       placeInp.addEventListener('input', () => {
         validateInputs();
@@ -501,8 +549,6 @@ async function showSummary() {
 }
 
 document.getElementById('meetsBtn').addEventListener('click', showMeets);
-document.getElementById('createBtn').addEventListener('click', showCreate);
-document.getElementById('configBtn').addEventListener('click', showConfig);
 document.getElementById('resultsBtn').addEventListener('click', showResultsEntry);
 document.getElementById('detailsBtn').addEventListener('click', showDetails);
 document.getElementById('summaryBtn').addEventListener('click', showSummary);

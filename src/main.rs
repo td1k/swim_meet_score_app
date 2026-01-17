@@ -1,5 +1,5 @@
 use actix_files::Files;
-use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder, middleware::Logger};
+use actix_web::{delete, get, post, web, App, HttpResponse, HttpServer, Responder, middleware::Logger};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -617,6 +617,33 @@ async fn get_scores(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Respo
     HttpResponse::Ok().json(resp)
 }
 
+#[delete("/api/meets/{id}")]
+async fn delete_meet(db: web::Data<Db>, path: web::Path<(String,)>) -> impl Responder {
+    let meet_id = path.0.clone();
+    
+    // Check if meet exists
+    let meet_opt = load_meet(&db, &meet_id).await;
+    if meet_opt.is_err() || meet_opt.unwrap().is_none() {
+        return HttpResponse::NotFound().finish();
+    }
+    
+    let result = db.call(move |conn| {
+        // Delete in reverse dependency order
+        conn.execute("DELETE FROM results WHERE meet_id = ?", params![meet_id])?;
+        conn.execute("DELETE FROM exhibition_lanes WHERE meet_id = ?", params![meet_id])?;
+        conn.execute("DELETE FROM lane_team WHERE meet_id = ?", params![meet_id])?;
+        conn.execute("DELETE FROM events WHERE meet_id = ?", params![meet_id])?;
+        conn.execute("DELETE FROM teams WHERE meet_id = ?", params![meet_id])?;
+        conn.execute("DELETE FROM meets WHERE id = ?", params![meet_id])?;
+        Ok::<(), rusqlite::Error>(())
+    }).await;
+    
+    match result {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().body("Failed to delete meet"),
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
@@ -638,6 +665,7 @@ async fn main() -> std::io::Result<()> {
             .service(update_config)
             .service(submit_result)
             .service(get_scores)
+            .service(delete_meet)
             .service(Files::new("/", "static/").index_file("index.html"))
     })
     .bind(("127.0.0.1", 8080))?
